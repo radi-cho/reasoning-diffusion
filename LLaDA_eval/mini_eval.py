@@ -1,6 +1,6 @@
 ## modify these paths accordingly and run -> ~5-7 mins
-bench_data_path = "/content/gsmSUBSAMPLE.txt"
-output_dir =  "/content/outputs/"
+bench_data_path = "gsmSUBSAMPLE.txt"
+output_dir =  "outputs/"
 remasking_method = "low_confidence"
 
 import subprocess
