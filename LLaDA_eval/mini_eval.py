@@ -1,4 +1,4 @@
-bench_data_path = "supermini.txt" 
+bench_data_path = "gsmSUBSAMPLE.txt" 
 output_dir =  "/outputs/"
 remasking_method = "low_confidence"
 
