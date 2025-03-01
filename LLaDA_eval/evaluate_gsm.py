@@ -98,6 +98,7 @@ def main():
     with open(args.output_dir + "/results.txt", "w") as f:
         for i in range(len(answers)):
             print(str(answers[i]) + "  " + ps[i], file=f)
+    print(float(sum(answers))/len(answers))
 
     with open(args.output_dir + "/scores.txt", "w") as f:
         print(
