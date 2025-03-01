@@ -1,5 +1,5 @@
 bench_data_path = "gsmSUBSAMPLE.txt" 
-output_dir =  "/outputs/"
+output_dir =  ""
 remasking_method = "low_confidence"
 
 import subprocess
