@@ -181,7 +181,7 @@ if __name__ == "__main__":
 
     parser.add_argument("--gen_len", type=int, default=256,required=False, help="Hyperparam: gen_len")
     parser.add_argument("--steps", type=int, default=128, required=False, help="Hyperparam: steps")
-    parser.add_argument("--block_size", type=int, default=8,required=False, help="Hyperparam: block_size")
+    parser.add_argument("--block_size", type=int, default=256,required=False, help="Hyperparam: block_size")
     
     args = parser.parse_args()
     main()
