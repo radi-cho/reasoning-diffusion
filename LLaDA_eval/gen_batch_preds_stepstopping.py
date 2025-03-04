@@ -5,7 +5,7 @@ import argparse
 import os
 import json
 import math
-from generate import generate
+from generate_stepstopping import generate_with_second_order_convergence
 import random
 ANSWER_TRIGGER = "The answer is"
 
@@ -148,7 +148,6 @@ def getBatchPreds():
     tokenizer = AutoTokenizer.from_pretrained('GSAI-ML/LLaDA-8B-Instruct', trust_remote_code=True)
 
     gen_length = args.gen_len
-    steps = args.steps
 
     res = []
     for inp in tqdm(inps):
@@ -160,9 +159,21 @@ def getBatchPreds():
 
       prompt = input_ids
 
-      out = generate(model, prompt, steps=steps, gen_length=gen_length, block_length=args.block_size, temperature=0., cfg_scale=0., remasking=args.remasking_method)
+      out, steps_taken = generate_with_second_order_convergence(
+    model, 
+    input_ids,
+    max_steps=args.max_steps, 
+    min_steps=args.min_steps,  
+    gen_length=args.gen_len, 
+    block_length=args.block_size, 
+    temperature=0.0, 
+    cfg_scale=0.0, 
+    remasking=args.remasking_method,
+    window_size=10,
+    convergence_threshold=args.convergence_threshold
+)
       answer = tokenizer.batch_decode(out[:, prompt.shape[1]:], skip_special_tokens=True)[0]
-      res.append({"question":q, "pred":answer,"answer":inp['answer']})
+      res.append({"question":q, "pred":answer,"answer":inp['answer'],"steps_taken":steps_taken})
 
     with open(args.output_path,'w') as f:
       f.write(str(res))
@@ -180,8 +191,10 @@ if __name__ == "__main__":
     parser.add_argument("--remasking_method", type=str, default="low_confidence", help="Remasking method")
 
     parser.add_argument("--gen_len", type=int, default=256,required=False, help="Hyperparam: gen_len")
-    parser.add_argument("--steps", type=int, default=128, required=False, help="Hyperparam: steps")
+    parser.add_argument("--max_steps", type=int, default=128, required=False, help="Hyperparam: max_steps")
+    parser.add_argument("--min_steps", type=int, default=1, required=False, help="Hyperparam: min_steps")
     parser.add_argument("--block_size", type=int, default=256,required=False, help="Hyperparam: block_size")
+    parser.add_argument("--convergence_threshold", type=float, default=0.003,required=False, help="Hyperparam: convergence_threshold")
     
     args = parser.parse_args()
     main()
