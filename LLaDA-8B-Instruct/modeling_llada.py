@@ -69,6 +69,23 @@ __all__ = [
 
 log = logging.getLogger(__name__)
 
+class SequenceClassifier(nn.Module):
+    def __init__(self, dim, hidden_dim=128):
+        super(SequenceClassifier, self).__init__()
+        self.attention = nn.Linear(dim, 1)
+        self.fc1 = nn.Linear(dim, hidden_dim)
+        self.fc2 = nn.Linear(hidden_dim, 1)
+
+    def forward(self, x):
+        attn_weights = F.softmax(self.attention(x), dim=1)  # [1, seq_len, 1]
+        x = (x * attn_weights).sum(dim=1)  # Weighted sum -> [1, dim]
+        x = F.relu(self.fc1(x))  # [1, hidden_dim]
+        x = torch.sigmoid(self.fc2(x))  # [1, 1]
+        return x
+
+dim = 4096
+seqmodel = SequenceClassifier(dim).to(device="cuda", dtype=torch.bfloat16).eval()
+seqmodel.load_state_dict(torch.load("seqmodel.pt", map_location="cuda", weights_only=True))
 
 class ModuleType(StrEnum):
     in_module = "in"
@@ -1431,6 +1448,8 @@ def get_num_transfer_tokens(mask_index, steps):
     return num_transfer_tokens
 
 
+from uuid import uuid4
+
 @ torch.no_grad()
 def generate(model, prompt, steps=128, gen_length=128, block_length=128, temperature=0.,
              cfg_scale=0., remasking='low_confidence', mask_id=126336):
@@ -1457,7 +1476,9 @@ def generate(model, prompt, steps=128, gen_length=128, block_length=128, tempera
     assert steps % num_blocks == 0
     steps = steps // num_blocks
 
+    finalize = False
     for num_block in range(num_blocks):
+        broke = False
         block_mask_index = (x[:, prompt.shape[1] + num_block * block_length: prompt.shape[1] + (num_block + 1) * block_length:] == mask_id)
         num_transfer_tokens = get_num_transfer_tokens(block_mask_index, steps)
         for i in range(steps):
@@ -1466,13 +1487,13 @@ def generate(model, prompt, steps=128, gen_length=128, block_length=128, tempera
                 un_x = x.clone()
                 un_x[prompt_index] = mask_id
                 x_ = torch.cat([x, un_x], dim=0)
-                out = model(x_)
+                out = model(x_, output_hidden_states=True)
                 logits = out.logits
                 predicted_mask = out.predicted_mask
                 logits, un_logits = torch.chunk(logits, 2, dim=0)
                 logits = un_logits + (cfg_scale + 1) * (logits - un_logits)
             else:
-                out = model(x)
+                out = model(x, output_hidden_states=True)
                 logits = out.logits
                 predicted_mask = out.predicted_mask
 
@@ -1500,6 +1521,26 @@ def generate(model, prompt, steps=128, gen_length=128, block_length=128, tempera
                 _, select_index = torch.topk(confidence[j], k=num_transfer_tokens[j, i])
                 transfer_index[j, select_index] = True
             x[transfer_index] = x0[transfer_index]
+
+            is_right = seqmodel(out.hidden_states[-1])
+            # print(is_right, num_block * block_length + i)
+            if is_right > 0.6:
+                print("breaking", num_block * block_length + i)
+                broke = True
+                break
+
+        if broke:
+            finalize = True
+            break
+
+    if finalize:
+        # Final diffusion step: fill all remaining mask tokens without remasking.
+        mask_index = (x == mask_id)
+        final_out = model(x, output_hidden_states=True)
+        final_logits = final_out.logits
+        final_logits_with_noise = add_gumbel_noise(final_logits, temperature=temperature)
+        final_candidate = torch.argmax(final_logits_with_noise, dim=-1)
+        x[mask_index] = final_candidate[mask_index]
 
     return x
 
@@ -1582,6 +1623,7 @@ class LLaDAModelLM(PreTrainedModel):
     def generate(self, prompt, steps=128, gen_length=128, block_length=128, temperature=0.,
              cfg_scale=0., remasking='low_confidence', mask_id=126336):
         return generate(self, prompt=prompt, steps=steps, gen_length=gen_length, block_length=block_length, temperature=temperature, remasking=remasking, mask_id=mask_id)
+
     
     def prepare_inputs_for_generation(
         self, input_ids: torch.LongTensor, past_key_values: Optional[List[Tuple]] = None, **kwargs
